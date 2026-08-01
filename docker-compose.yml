@@ -1,0 +1,99 @@
+# 로컬 리서치 스택: SearxNG(검색) + GPT Researcher(리서치 엔진) + n8n(루프/스케줄)
+# LLM은 컨테이너가 아니라 Windows 호스트의 Ollama가 담당 (GPU를 직접 쓰기 위함).
+# 컨테이너 → 호스트 Ollama 접근은 host.docker.internal 사용 (Docker Desktop 기본 지원).
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./searxng:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    restart: unless-stopped
+
+  gpt-researcher:
+    # [Claude Code 수정] 공식 이미지에 langchain-ollama가 없어서 Ollama 설정이 런타임에 죽는다.
+    # Dockerfile.gpt-researcher가 공식 이미지 위에 그 패키지만 얹는다. 이유는 그 파일 주석 참조.
+    build:
+      context: .
+      dockerfile: Dockerfile.gpt-researcher
+    image: gpt-researcher-ollama:local
+    container_name: gpt-researcher
+    ports:
+      - "8000:8000"
+    environment:
+      # 검색: 로컬 SearxNG (완전 무료, API 키 불필요)
+      - RETRIEVER=searx
+      - SEARX_URL=http://searxng:8080
+      # [Claude Code 추가] 스크래퍼를 BeautifulSoup으로 명시 고정.
+      # 지정 안 하면 런타임에 firecrawl이 선택되는데, 이 이미지의 firecrawl-py 버전과
+      # 호출 시그니처가 안 맞아서(FirecrawlClient.scrape() got an unexpected keyword
+      # argument 'params') 모든 URL 스크래핑이 실패 → 컨텍스트 0 → 모델이 내용을 지어냄.
+      - SCRAPER=bs
+      # [Claude Code 추가] 기본값이 english라 주제에 "한국어로"를 써도 영어로 나온다.
+      - LANGUAGE=korean
+      # LLM: 호스트의 Ollama
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - FAST_LLM=ollama:qwen3:8b
+      - SMART_LLM=ollama:qwen3:30b
+      - STRATEGIC_LLM=ollama:qwen3:30b
+      - EMBEDDING=ollama:nomic-embed-text
+      # 일부 버전에서 OpenAI 키 존재 여부만 체크하는 경우가 있어 더미값 설정
+      - OPENAI_API_KEY=not-needed-using-ollama
+    # [Claude Code 수정] Docker Desktop 대신 WSL2 Ubuntu의 Docker Engine을 쓰기 때문에
+    # host.docker.internal이 자동으로 Windows 호스트를 가리키지 않는다.
+    # WSL 게이트웨이 IP = Windows 호스트 (WSL 안에서 `ip route show default`로 확인).
+    # LAN IP(192.168.0.166)는 Windows 방화벽이 WSL 트래픽을 드롭해서 안 됨.
+    # 전제: Ollama가 OLLAMA_HOST=0.0.0.0으로 실행 + 방화벽에서 11434 인바운드 허용.
+    # 주의: 이 게이트웨이 IP는 WSL 재시작 시 바뀔 수 있다. 연결 실패 시
+    #       `wsl -d Ubuntu -- ip route show default`로 확인 후 아래 값을 갱신할 것.
+    extra_hosts:
+      - "host.docker.internal:172.20.80.1"
+    volumes:
+      - ./files/reports:/usr/src/app/outputs
+    depends_on:
+      - searxng
+    restart: unless-stopped
+
+  # [Claude Code 추가] REST -> WebSocket 브리지.
+  # 현재 gpt-researcher 이미지에는 POST /report/ 엔드포인트가 없고(404) WebSocket만 지원하는데,
+  # n8n의 HTTP Request 노드는 WebSocket을 못 쓴다. 이 브리지가 워크플로우가 기대하는 REST 형태를
+  # 그대로 제공하고 내부에서 WebSocket으로 대화한다. 자세한 이유는 bridge/bridge.py 상단 주석 참조.
+  # gpt-researcher와 같은 이미지를 재사용하므로 추가 이미지 다운로드 없음.
+  researcher-bridge:
+    image: gpt-researcher-ollama:local
+    container_name: researcher-bridge
+    command: python /bridge/bridge.py
+    environment:
+      - GPTR_WS=ws://gpt-researcher:8000/ws
+      - BRIDGE_PORT=8100
+    volumes:
+      - ./bridge:/bridge:ro
+    depends_on:
+      - gpt-researcher
+    restart: unless-stopped
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=Asia/Seoul
+      - TZ=Asia/Seoul
+      # localhost http 접속용 (외부 노출 금지 전제)
+      - N8N_SECURE_COOKIE=false
+      # [Claude Code 추가] 현재 n8n 이미지는 Read/Write File 노드의 파일 접근을 기본 차단한다.
+      # 이게 없으면 워크플로우 첫 노드에서 "Access to the file is not allowed."로 즉시 실패한다.
+      # /files 아래(topics.txt 읽기, reports/ 쓰기)만 허용 — 그 밖의 경로는 여전히 차단된다.
+      - N8N_RESTRICT_FILE_ACCESS_TO=/files
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./files:/files
+    restart: unless-stopped
+
+volumes:
+  n8n_data:

@@ -1,0 +1,19 @@
+# Generated at runtime by setup.ps1 — never commit
+files/
+
+# SearxNG secret is generated per-install. The committed settings.yml must keep
+# the REPLACE_ME_SECRET placeholder; this guards against committing a real one.
+searxng/settings.local.yml
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

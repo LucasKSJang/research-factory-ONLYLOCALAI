@@ -1,0 +1,15 @@
+# SearxNG 최소 설정 — 기본 설정 위에 아래 항목만 덮어씀
+use_default_settings: true
+
+server:
+  # setup.ps1이 자동으로 랜덤 값으로 교체함
+  secret_key: "REPLACE_ME_SECRET"
+  # 로컬 API 용도라 봇 차단(limiter) 비활성 — 외부에 포트를 열 거면 반드시 true로
+  limiter: false
+  image_proxy: true
+
+search:
+  # gpt-researcher가 JSON 포맷으로 호출하므로 json 활성화 필수 (기본값은 html만)
+  formats:
+    - html
+    - json

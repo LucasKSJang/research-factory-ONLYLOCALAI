@@ -1,0 +1,262 @@
+{
+  "name": "Local Research Loop",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger-01",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-220, 280]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 7,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-01",
+      "name": "Daily 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-220, 480]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "/files/topics.txt",
+        "options": {}
+      },
+      "id": "read-topics-01",
+      "name": "Read Topics File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [20, 380]
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "id": "extract-text-01",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [240, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.data || '';\nconst topics = text\n  .split(/\\r?\\n/)\n  .map(t => t.trim())\n  .filter(t => t && !t.startsWith('#'));\nif (topics.length === 0) {\n  throw new Error('topics.txt has no topics - add one topic per line');\n}\nreturn topics.map(topic => ({ json: { topic } }));"
+      },
+      "id": "parse-topics-01",
+      "name": "Parse Topics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 380]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "loop-topics-01",
+      "name": "Loop Over Topics",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://researcher-bridge:8100/report",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ task: $json.topic, report_type: \"research_report\", report_source: \"web\", generate_in_background: false }) }}",
+        "options": {
+          "timeout": 5400000
+        }
+      },
+      "id": "generate-report-01",
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 480],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nconst report = j.report || j.output || JSON.stringify(j, null, 2);\nconst topic = $('Loop Over Topics').first().json.topic;\nconst date = $now.toFormat('yyyy-MM-dd');\nconst slug = topic\n  .replace(/[^\\p{L}\\p{N}]+/gu, '-')\n  .replace(/^-+|-+$/g, '')\n  .slice(0, 60) || 'report';\nreturn [{ json: { report: String(report), fileName: `/files/reports/${date}_${slug}.md` } }];"
+      },
+      "id": "prep-file-01",
+      "name": "Prep File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1160, 480]
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "report",
+        "options": {}
+      },
+      "id": "to-text-file-01",
+      "name": "To Text File",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [1380, 480]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $('Prep File').first().json.fileName }}",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "save-report-01",
+      "name": "Save Report",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [1600, 480]
+    },
+    {
+      "parameters": {},
+      "id": "done-01",
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [940, 240]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Topics File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 07:00": {
+      "main": [
+        [
+          {
+            "node": "Read Topics File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Topics File": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "Parse Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Topics": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Topics": {
+      "main": [
+        [
+          {
+            "node": "Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report": {
+      "main": [
+        [
+          {
+            "node": "Prep File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep File": {
+      "main": [
+        [
+          {
+            "node": "To Text File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To Text File": {
+      "main": [
+        [
+          {
+            "node": "Save Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Report": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
