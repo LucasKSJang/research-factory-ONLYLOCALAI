@@ -42,8 +42,36 @@ Reports are markdown with inline citations and a reference list. A real excerpt:
 > 이번 일일 유입 중 **블랙록 IBIT**는 **1억 8,340만 달러(78.7%)**를 유입하며 전체 유입의
 > 5분의 4를 책임졌다 ([Yellow.com, 2026](...)).
 
-Output language is configurable (`LANGUAGE` in `docker-compose.yml`); this build is
-set to Korean.
+### Bilingual output
+
+Each topic produces two files:
+
+```
+files/reports/2026-08-02_<topic>.en.md    <- researched in English
+files/reports/2026-08-02_<topic>.ko.md    <- translated
+```
+
+The research runs **once**, in English (`LANGUAGE` in `docker-compose.yml`), and the
+bridge then translates the finished report section by section
+(`TRANSLATE_MODEL`, default `qwen3:8b`). Set `translate_to` in the workflow's
+Generate Report body to any language, or drop it for single-language output.
+
+Translating beats researching twice for two reasons. It costs ~90 seconds instead of
+another 13–22 minutes, and — more importantly — both versions are guaranteed to carry
+the same facts. Two independent research runs fetch different sources and disagree on
+the numbers.
+
+Measured on a real pair:
+
+| Check | Result |
+|---|---|
+| URLs cited | 4 vs 4, identical set |
+| Percentages | `30%, 40%, 60%` in both |
+| Heading structure | 14 vs 14 |
+| Language purity | `.en.md` 0 Korean chars; `.ko.md` 2,901 |
+
+Translation failures degrade gracefully: a failed section stays in the source
+language, and if translation fails entirely the English report is still saved.
 
 ---
 

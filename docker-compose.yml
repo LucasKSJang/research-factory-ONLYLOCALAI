@@ -33,8 +33,10 @@ services:
       # 호출 시그니처가 안 맞아서(FirecrawlClient.scrape() got an unexpected keyword
       # argument 'params') 모든 URL 스크래핑이 실패 → 컨텍스트 0 → 모델이 내용을 지어냄.
       - SCRAPER=bs
-      # [Claude Code 추가] 기본값이 english라 주제에 "한국어로"를 써도 영어로 나온다.
-      - LANGUAGE=korean
+      # [Claude Code 추가] 보고서 원본 언어. 프롬프트에 그대로 꽂히는 자유 문자열이라
+      # 주제 문장에 "한국어로"라고 써도 이 값이 이긴다.
+      # 영어로 쓰고 브리지가 한글로 번역하는 구성 (researcher-bridge의 TRANSLATE_TO 참조).
+      - LANGUAGE=english
       # LLM: 호스트의 Ollama
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - FAST_LLM=ollama:qwen3:8b
@@ -70,6 +72,13 @@ services:
     environment:
       - GPTR_WS=ws://gpt-researcher:8000/ws
       - BRIDGE_PORT=8100
+      # 번역용 — 호스트 Ollama를 직접 호출한다.
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - TRANSLATE_MODEL=qwen3:8b
+      - TRANSLATE_TIMEOUT=900
+    # gpt-researcher와 같은 이유로 WSL 게이트웨이 매핑이 필요하다 (위 주석 참조).
+    extra_hosts:
+      - "host.docker.internal:172.20.80.1"
     volumes:
       - ./bridge:/bridge:ro
     depends_on:

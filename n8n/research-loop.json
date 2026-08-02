@@ -77,7 +77,7 @@
         "url": "http://researcher-bridge:8100/report",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ task: $json.topic, report_type: \"research_report\", report_source: \"web\", generate_in_background: false }) }}",
+        "jsonBody": "={{ JSON.stringify({ task: $json.topic, report_type: \"research_report\", report_source: \"web\", generate_in_background: false, translate_to: \"Korean\" }) }}",
         "options": {
           "timeout": 5400000
         }
@@ -94,7 +94,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const j = $input.first().json;\nconst report = j.report || j.output || JSON.stringify(j, null, 2);\nconst topic = $('Loop Over Topics').first().json.topic;\nconst date = $now.toFormat('yyyy-MM-dd');\nconst slug = topic\n  .replace(/[^\\p{L}\\p{N}]+/gu, '-')\n  .replace(/^-+|-+$/g, '')\n  .slice(0, 60) || 'report';\nreturn [{ json: { report: String(report), fileName: `/files/reports/${date}_${slug}.md` } }];"
+        "jsCode": "const j = $input.first().json;\nconst report = j.report || j.output || JSON.stringify(j, null, 2);\nconst translated = j.report_translated;\nconst topic = $('Loop Over Topics').first().json.topic;\nconst date = $now.toFormat('yyyy-MM-dd');\nconst slug = topic\n  .replace(/[^\\p{L}\\p{N}]+/gu, '-')\n  .replace(/^-+|-+$/g, '')\n  .slice(0, 60) || 'report';\n\n// 원본(영어) 한 건, 번역본(한글)이 있으면 한 건 더. 파일명에 언어를 명시한다.\nconst items = [\n  { json: { report: String(report), fileName: `/files/reports/${date}_${slug}.en.md` } }\n];\nif (translated && String(translated).trim()) {\n  items.push({ json: { report: String(translated), fileName: `/files/reports/${date}_${slug}.ko.md` } });\n}\nreturn items;"
       },
       "id": "prep-file-01",
       "name": "Prep File",
@@ -117,7 +117,7 @@
     {
       "parameters": {
         "operation": "write",
-        "fileName": "={{ $('Prep File').first().json.fileName }}",
+        "fileName": "={{ $('Prep File').item.json.fileName }}",
         "dataPropertyName": "data",
         "options": {}
       },
