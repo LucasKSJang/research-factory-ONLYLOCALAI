@@ -78,7 +78,7 @@ Reports land in `files/reports/`.
 
 ---
 
-## Six things that were broken, and how they were fixed
+## Seven things that were broken, and how they were fixed
 
 The interesting part of this project wasn't wiring the components together — it was
 that **almost nothing worked out of the box**. Current upstream images have drifted
@@ -152,6 +152,36 @@ crash-looping on a YAML parse error.
 
 `setup.ps1` here uses `[System.IO.File]::ReadAllText/WriteAllText` with an explicit
 UTF-8-no-BOM encoding.
+
+### 7. Exported PDFs drop every non-Latin character
+
+The markdown reports were fine, but the PDF and DOCX exports came out with all Korean
+text **missing entirely** — not garbled, just blank space where the characters should
+be.
+
+Two causes stacked:
+
+- The image ships **zero CJK fonts** (only DejaVu and Liberation).
+- `frontend/pdf_styles.css` asks for `'Libre Baskerville', serif`, and the `serif`
+  fallback resolves to a font with no Korean glyphs.
+
+PDFs are produced by `md2pdf` → WeasyPrint, which silently renders nothing for
+glyphs it cannot find. `Dockerfile.gpt-researcher` installs `fonts-nanum` and
+`fonts-noto-cjk` and patches the CSS font chain. Note the image runs as uid 1000, so
+the font install needs a `USER root` / `USER gpt-researcher` sandwich or `apt-get`
+fails with a permission error.
+
+Verify with:
+
+```bash
+docker exec gpt-researcher python -c "
+import fitz
+d = fitz.open('/usr/src/app/outputs/<report>.pdf')
+t = ''.join(p.get_text() for p in d)
+print('CJK chars:', sum(1 for c in t if '가' <= c <= '힣'))"
+```
+
+This applies to any non-Latin script, not just Korean.
 
 ---
 

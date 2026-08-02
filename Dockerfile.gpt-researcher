@@ -1,16 +1,44 @@
 # [Claude Code 추가]
-# gptresearcher/gpt-researcher:latest 이미지에는 langchain-ollama가 들어있지 않다.
-# 그래서 docker-compose.yml의 EMBEDDING=ollama:... / SMART_LLM=ollama:... 설정이
-# 런타임에 ModuleNotFoundError: No module named 'langchain_ollama' 로 죽는다.
-#   (gpt_researcher/memory/embeddings.py 의 `from langchain_ollama import OllamaEmbeddings`)
 #
-# 버전 주의: 그냥 `pip install langchain-ollama` 하면 langchain-core가 1.x로 올라가서
-# 이미지에 고정된 langchain 0.3.20 생태계와 충돌한다. 0.2.x 라인으로 고정해야
-# `pip check`가 깨끗하게 통과한다.
+# 1) gptresearcher/gpt-researcher:latest 이미지에는 langchain-ollama가 들어있지 않다.
+#    그래서 docker-compose.yml의 EMBEDDING=ollama:... / SMART_LLM=ollama:... 설정이
+#    런타임에 ModuleNotFoundError: No module named 'langchain_ollama' 로 죽는다.
+#      (gpt_researcher/memory/embeddings.py 의 `from langchain_ollama import OllamaEmbeddings`)
+#
+#    버전 주의: 그냥 `pip install langchain-ollama` 하면 langchain-core가 1.x로 올라가서
+#    이미지에 고정된 langchain 0.3.20 생태계와 충돌한다. 0.2.x 라인으로 고정해야
+#    `pip check`가 깨끗하게 통과한다.
+#
+# 2) 이미지에 CJK 글꼴이 하나도 없다(DejaVu/Liberation뿐). PDF는 md2pdf -> weasyprint로
+#    만들어지는데, frontend/pdf_styles.css가 'Libre Baskerville', serif를 지정하고
+#    폴백 serif에도 한글 글리프가 없어서 **한글이 통째로 빈칸으로 렌더링된다.**
+#    (마크다운 원본은 멀쩡하고 PDF/변환 단계만의 문제)
+#    글꼴 설치 + CSS 폰트 체인에 CJK 추가로 둘 다 해결한다.
+#
+#    이 이미지는 기본 유저가 gpt-researcher(uid 1000)라 apt-get이 권한 오류로 실패한다.
+#    폰트 설치 구간만 root로 올라갔다가 원래 유저로 되돌린다.
+
 FROM gptresearcher/gpt-researcher:latest
 
+# --- 1) Ollama 지원 ---
 RUN pip install --no-cache-dir \
       "langchain-ollama==0.2.3" \
       "langchain-core>=0.3.41,<0.4.0" \
       "langsmith>=0.1.125,<0.4" \
  && pip check
+
+# --- 2) 한글/CJK 글꼴 (root 권한 필요) ---
+USER root
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends fonts-nanum fonts-noto-cjk \
+ && fc-cache -f \
+ && rm -rf /var/lib/apt/lists/*
+
+# PDF 스타일시트의 폰트 체인에 CJK를 끼워넣는다 (원본 스타일은 그대로 유지).
+RUN sed -i "s/font-family: 'Libre Baskerville', serif;/font-family: 'Libre Baskerville', 'NanumGothic', 'Noto Sans CJK KR', serif;/g" \
+      /usr/src/app/frontend/pdf_styles.css \
+ && grep -n "font-family" /usr/src/app/frontend/pdf_styles.css
+
+# 원래 유저로 복귀 — 앱은 root로 돌리지 않는다.
+USER gpt-researcher
